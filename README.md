@@ -6,7 +6,7 @@ Version 3.6 – A minimalist, single‑script bash harness that turns any local 
 
 ## Overview
 
-UNIXAI is a self‑contained Bash script that designed to run off one bash entirely in your terminal. It connects to a local Ollama server, lets you chat with any model, and offers a unique **Reflection Loop** – a self‑dialogue where the AI continuously responds to its own previous messages, simulating a conversation between a user and an assistant. The loop can be started with any initial prompt and runs indefinitely until you interrupt it.
+UNIXAI is a self‑contained Bash script that designed to run off one bash entirely in your terminal. It connects to a local Ollama server and lets you chat with any model. It offers a unique **Reflection Loop** – a self‑dialogue where the AI continuously responds to its own previous messages, simulating a conversation between a user and an assistant. The loop can be started with any initial prompt and runs indefinitely until you interrupt it.
 
 Agent capabilities (command suggestion via `<cmd>...</cmd>` tags) are always active, making it useful for system administration, development, or exploring model behavior.
 
