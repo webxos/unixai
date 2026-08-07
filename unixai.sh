@@ -463,7 +463,7 @@ ascii_banner() {
     ▘  ▄▖▄▖
 ▌▌▛▌▌▚▘▌▌▐ 
 ▙▌▌▌▌▞▖▛▌▟▖
-    UNIXAI – Loop Mode Ready
+    UNIXAI – Agent Harness
 BANNER_EOF
 }
 
