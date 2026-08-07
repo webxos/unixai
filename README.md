@@ -61,7 +61,7 @@ To start the endless loop with an initial prompt:
 /reflect on write a short story about a robot
 ```
 
-The loop continues until you:
+This starts a 1:1 loop between the AI> agent and the User (Reflect)> agent. The loop continues until you:
 - Type `/reflect off`
 - Or type any normal message (which will break the loop and become your next user input)
 
