@@ -1,5 +1,9 @@
 # UNIXAI – Under Development
-
+```
+    ▘  ▄▖▄▖
+▌▌▛▌▌▚▘▌▌▐ 
+▙▌▌▌▌▞▖▛▌▟▖
+```
 Version 3.6 – A minimalist, single‑script bash harness that turns any local Ollama model into an autonomous conversational agent with an endless reflection mode, message queue, and built‑in tool‑calling.
 
 ---
