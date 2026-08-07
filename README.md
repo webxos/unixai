@@ -61,21 +61,6 @@ To start the endless loop with an initial prompt:
 /reflect on write a short story about a robot
 ```
 
-The script will output:
-```
-[reflection mode ON] starting with prompt: write a short story about a robot
-User (Reflect)> write a short story about a robot
-Thinking... 4s
-AI> Once upon a time...
-```
-
-Then automatically:
-```
-User (Reflect)> Once upon a time...
-Thinking... 3s
-AI> That's a great start! Let me continue...
-```
-
 The loop continues until you:
 - Type `/reflect off`
 - Or type any normal message (which will break the loop and become your next user input)
