@@ -142,6 +142,3 @@ This prevents the script from hanging indefinitely due to slow or stuck response
 ## 📄 License
 
 MIT
-
-**Happy building!** 🏭
-```
