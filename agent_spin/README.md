@@ -116,7 +116,7 @@ Each `Cycle_N_lang` is a self‑contained project. The script never overwrites p
 
 ## ⏱️ Timeout Design
 
-Unlike earlier versions, AGENT SPIN now uses **finite timeouts** for both test execution and Ollama generation:
+AGENT SPIN uses **finite timeouts** for both test execution and Ollama generation:
 
 - **Test timeout** – `TEST_TIMEOUT` seconds; if a test hangs, it is killed.
 - **Ollama timeout** – `OLLAMA_MAX_TIMEOUT` seconds; if the model takes too long, the request is aborted and the cycle is retried.
