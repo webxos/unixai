@@ -2,8 +2,7 @@
 
 **Infinite Loop • Git Auto‑Commit • Local LLM Driven • Production‑Ready**
 
-AGENT SPIN is a **self‑running, continuously building code generator** that uses a local Ollama model to autonomously write, test, fix, and version‑control complete software projects.  
-Just set your preferred model once, give it a goal, and watch it create a new project every cycle – until you stop it. It's built off the basic unixai.sh harness format.
+AGENT SPIN is a **self‑running, continuously building code generator** that uses a local Ollama model to autonomously write, test, fix, and version‑control complete software projects. Just set your preferred model once, give it a goal, and watch it create a new project every cycle. It's built off the basic unixai.sh harness format.
 
 ---
 
