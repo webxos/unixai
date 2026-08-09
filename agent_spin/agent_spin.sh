@@ -7,11 +7,11 @@
 # Configuration (edit these variables):
 #   MODEL_NAME            - Ollama model (e.g., qwen2.5:0.5b)
 #   MAX_TEST_RETRIES      - fix attempts per cycle
-#   TEST_TIMEOUT          - seconds to wait for tests before killing
-#   OLLAMA_MAX_TIMEOUT    - max seconds for Ollama generation (0 = infinite, but we use 600)
+#   TEST_TIMEOUT          - seconds to wait for tests before killing (0 = no timeout)
+#   OLLAMA_MAX_TIMEOUT    - max seconds for Ollama generation (0 = infinite)
 #   AUTO_PUSH             - set to "true" to enable automatic git push
 #   WORKSPACE_BASE        - where to create workspace (default: ~/Desktop)
-#   MAX_CYCLES            - stop after this many cycles (default: 0 = infinite)
+#   MAX_CYCLES            - stop after this many cycles (0 = infinite)
 #   CLEAN_NODE_MODULES    - remove node_modules folder after each cycle (default: false)
 # ==============================================================================
 
@@ -19,11 +19,11 @@
 OLLAMA_URL="http://localhost:11434/api/generate"
 MODEL_NAME="qwen2.5:0.5b"
 MAX_TEST_RETRIES=3
-TEST_TIMEOUT=60
-OLLAMA_MAX_TIMEOUT=600                # 10 minutes for model generation
+TEST_TIMEOUT=60                     # set to 0 to disable timeout
+OLLAMA_MAX_TIMEOUT=6000             # set to 0 for infinite
 AUTO_PUSH="false"
 WORKSPACE_BASE="${HOME}/Desktop"
-MAX_CYCLES=0                           # 0 = infinite
+MAX_CYCLES=0                        # 0 = infinite
 CLEAN_NODE_MODULES="false"
 
 # --- INTERNAL VARIABLES -------------------------------------------------------
@@ -188,7 +188,7 @@ ask_ollama() {
         --arg prompt "$full" \
         '{model: $model, prompt: $prompt, stream: false}')
 
-    # Send request with finite timeout
+    # Send request with finite timeout (0 = infinite)
     local response
     response=$(curl -s --max-time "$OLLAMA_MAX_TIMEOUT" --connect-timeout 60 \
         -X POST "$OLLAMA_URL" \
@@ -371,13 +371,10 @@ test_and_fix() {
     local status=1
 
     # --- Pre‑test syntax fixing ---
-    # First, check both files for syntax errors; fix any that fail.
     echo "🔍 Checking syntax..."
     for file in "$APP_FILE" "$TEST_FILE"; do
         if ! check_syntax "$file" "$PROJ_LANG"; then
             echo "⚠️  Syntax errors in $file – attempting to fix."
-            # Try to fix the file using a generic error message (we don't have logs yet)
-            # We'll ask the model to fix the code with a generic "syntax errors" prompt.
             local errors="Syntax errors detected."
             if fix_code "$file" "$PROJ_LANG" "$errors" "$(basename "$file")"; then
                 echo "✅ $file fixed."
@@ -392,12 +389,17 @@ test_and_fix() {
         ((attempts++))
         echo "🔍 [Attempt $attempts/$MAX_TEST_RETRIES] Running: $TEST_CMD"
 
-        # Run test with timeout using bash -c for safety
-        timeout "$TEST_TIMEOUT" bash -c "$TEST_CMD" > test_output.log 2>&1
-        status=$?
-        if [ $status -eq 124 ]; then
-            echo "⏱️  Test timed out after ${TEST_TIMEOUT}s – treating as failure."
-            status=1
+        # Run test with timeout only if TEST_TIMEOUT > 0
+        if [ "$TEST_TIMEOUT" -gt 0 ]; then
+            timeout "$TEST_TIMEOUT" bash -c "$TEST_CMD" > test_output.log 2>&1
+            status=$?
+            if [ $status -eq 124 ]; then
+                echo "⏱️  Test timed out after ${TEST_TIMEOUT}s – treating as failure."
+                status=1
+            fi
+        else
+            bash -c "$TEST_CMD" > test_output.log 2>&1
+            status=$?
         fi
 
         if [ $status -eq 0 ]; then
@@ -409,8 +411,6 @@ test_and_fix() {
             local errors
             errors=$(cat test_output.log 2>/dev/null)
 
-            # Strategy: fix the test file first (it's often the source of failure)
-            # If fixing test fails, fix the app.
             local fixed_ok=0
             echo "   → Attempting to fix test file..."
             if fix_code "$TEST_FILE" "$PROJ_LANG" "$errors" "test file"; then
@@ -427,7 +427,7 @@ test_and_fix() {
                 fi
             fi
 
-            # If we applied a fix, re-check syntax of both files (optional)
+            # Re-check syntax after fixes
             if [ $fixed_ok -eq 1 ]; then
                 for file in "$APP_FILE" "$TEST_FILE"; do
                     if ! check_syntax "$file" "$PROJ_LANG"; then
@@ -487,8 +487,8 @@ main() {
     echo "======================================================================"
     echo "🚀 Running forever. Press Ctrl+C to stop."
     echo "   Each cycle creates a new folder – nothing is ever deleted."
-    echo "   ⏳ Ollama generation timeout: ${OLLAMA_MAX_TIMEOUT}s"
-    echo "   🧪 Test timeout: ${TEST_TIMEOUT}s per run."
+    echo "   ⏳ Ollama generation timeout: ${OLLAMA_MAX_TIMEOUT}s (0 = infinite)"
+    echo "   🧪 Test timeout: ${TEST_TIMEOUT}s per run (0 = no timeout)"
     if [ "$MAX_CYCLES" -gt 0 ]; then
         echo "   🔢 Will stop after $MAX_CYCLES cycles."
     fi
