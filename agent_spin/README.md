@@ -145,7 +145,7 @@ Find the configuration block near the top (lines ~10–20):
 ```
 # --- CONFIGURATION ------------------------------------------------------------
 OLLAMA_URL="http://localhost:11434/api/generate"
-MODEL_NAME="qwen2.5:0.5b"
+MODEL_NAME="qwen2.5:0.5b"    < Edit this line to switch to a better model
 MAX_TEST_RETRIES=3
 TEST_TIMEOUT=60
 OLLAMA_MAX_TIMEOUT=600   < Edit this line to set proper amount (Default 600 is roughly 10 mins)
