@@ -1,18 +1,20 @@
 #!/bin/bash
 # ==============================================================================
-# AGENT SPIN – Autonomous Code Factory (Fully Fixed, Production Ready)
+# AGENT SPIN – Autonomous Code Factory (Ultimate Production Version)
 # ==============================================================================
 # Usage: bash agent_spin.sh ["your goal"] [max_cycles]
 #
 # Configuration (edit these variables):
 #   MODEL_NAME            - Ollama model (e.g., qwen2.5:0.5b)
-#   MAX_TEST_RETRIES      - fix attempts per cycle
+#   MAX_TEST_RETRIES      - fix attempts per cycle (0 = run tests once, no retries)
 #   TEST_TIMEOUT          - seconds to wait for tests before killing (0 = no timeout)
 #   OLLAMA_MAX_TIMEOUT    - max seconds for Ollama generation (0 = infinite)
 #   AUTO_PUSH             - set to "true" to enable automatic git push
 #   WORKSPACE_BASE        - where to create workspace (default: ~/Desktop)
 #   MAX_CYCLES            - stop after this many cycles (0 = infinite)
 #   CLEAN_NODE_MODULES    - remove node_modules folder after each cycle (default: false)
+#   CURL_RETRIES          - number of retries for Ollama requests (default: 3)
+#   CURL_RETRY_DELAY      - initial delay in seconds between retries (default: 2)
 # ==============================================================================
 
 # --- CONFIGURATION ------------------------------------------------------------
@@ -25,6 +27,8 @@ AUTO_PUSH="false"
 WORKSPACE_BASE="${HOME}/Desktop"
 MAX_CYCLES=0                        # 0 = infinite
 CLEAN_NODE_MODULES="false"
+CURL_RETRIES=3                      # number of retries for curl requests
+CURL_RETRY_DELAY=2                  # initial delay (exponential backoff)
 
 # --- INTERNAL VARIABLES -------------------------------------------------------
 CYCLE_COUNT=0
@@ -39,7 +43,7 @@ TEST_FILE=""
 TEST_CMD=""
 RUN_CMD=""
 
-# --- REQUIRE jq ---------------------------------------------------------------
+# --- REQUIRE jq and timeout ---------------------------------------------------
 if ! command -v jq >/dev/null 2>&1; then
     echo "❌ ERROR: 'jq' is required for JSON parsing. Please install it:"
     echo "   sudo apt install jq   (Debian/Ubuntu)"
@@ -47,9 +51,19 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 1
 fi
 
-# --- Cleanup on exit ----------------------------------------------------------
+if ! command -v timeout >/dev/null 2>&1; then
+    echo "❌ ERROR: 'timeout' command is required (GNU coreutils)."
+    echo "   Please install coreutils or ensure 'timeout' is in PATH."
+    exit 1
+fi
+
+# --- Cleanup on exit (guard against unset WORKSPACE_DIR) ----------------------
 cleanup() {
     local exit_code=$?
+    # Remove any leftover .tmp files only if WORKSPACE_DIR is set
+    if [ -n "$WORKSPACE_DIR" ] && [ -d "$WORKSPACE_DIR" ]; then
+        find "$WORKSPACE_DIR" -name "*.tmp" -type f -delete 2>/dev/null
+    fi
     echo -e "\n🛑 AGENT SPIN stopped after $CYCLE_COUNT cycles."
     exit $exit_code
 }
@@ -57,11 +71,9 @@ trap cleanup SIGINT SIGTERM
 
 # --- Check Ollama & model -----------------------------------------------------
 check_ollama() {
-    # Build JSON payload with jq
     local payload
-    payload=$(jq -n --arg model "$MODEL_NAME" '{model:$model, prompt:"ping", stream:false}')
+    payload=$(jq -n --arg model "$MODEL_NAME" '{model:$model, prompt:"Hello", stream:false}')
 
-    # Send request and capture HTTP status and response body
     local http_code response_body
     response_body=$(curl -s -X POST "$OLLAMA_URL" \
         -H "Content-Type: application/json" \
@@ -76,10 +88,9 @@ check_ollama() {
         exit 1
     fi
 
-    # Verify that we got a proper response
     local response_text
     response_text=$(echo "$response_body" | jq -r '.response' 2>/dev/null)
-    if [ -z "$response_text" ]; then
+    if [ -z "$response_text" ] || [ ${#response_text} -lt 1 ]; then
         echo "❌ ERROR: Ollama did not return a valid response. Maybe model '$MODEL_NAME' not found?" >&2
         exit 1
     fi
@@ -88,13 +99,11 @@ check_ollama() {
 
 # --- Setup workspace ----------------------------------------------------------
 setup_workspace() {
-    # Create workspace directory
     if [ -z "$WORKSPACE_BASE" ] || [ ! -d "$WORKSPACE_BASE" ]; then
         WORKSPACE_BASE="$HOME"
         echo "⚠️  Desktop not found – using $HOME as base"
     fi
 
-    # Ensure we can write to the base
     if [ ! -w "$WORKSPACE_BASE" ]; then
         echo "❌ ERROR: Cannot write to $WORKSPACE_BASE. Please set WORKSPACE_BASE to a writable directory."
         exit 1
@@ -122,7 +131,6 @@ setup_workspace() {
     echo "📁 Workspace: $WORKSPACE_DIR"
     echo "💡 Goal: $USER_GOAL"
 
-    # Initialize Git repo if available
     if command -v git >/dev/null; then
         echo "🔧 Initializing Git repository..."
         cd "$WORKSPACE_DIR" || { echo "ERROR: cannot cd to workspace"; exit 1; }
@@ -169,42 +177,52 @@ git_commit() {
             fi
         fi
     else
-        # Nothing to commit – fine
         :
     fi
     cd - > /dev/null || return
 }
 
-# --- Safe JSON query to Ollama (jq required) ----------------------------------
+# --- Safe JSON query to Ollama with retries ------------------------------------
 ask_ollama() {
     local sys_prompt="$1"
     local user_prompt="$2"
     local full="${sys_prompt}\n\nUser: ${user_prompt}"
 
-    # Build JSON payload with jq
     local payload
     payload=$(jq -n \
         --arg model "$MODEL_NAME" \
         --arg prompt "$full" \
         '{model: $model, prompt: $prompt, stream: false}')
 
-    # Send request with finite timeout (0 = infinite)
     local response
-    response=$(curl -s --max-time "$OLLAMA_MAX_TIMEOUT" --connect-timeout 60 \
-        -X POST "$OLLAMA_URL" \
-        -H "Content-Type: application/json" \
-        -d "$payload" 2>/dev/null)
-    if [ -z "$response" ]; then
-        echo "⚠️  Ollama returned empty response." >&2
+    local exit_code
+    local attempt=1
+    local delay=$CURL_RETRY_DELAY
+
+    while [ $attempt -le $CURL_RETRIES ]; do
+        response=$(curl -s --max-time "$OLLAMA_MAX_TIMEOUT" --connect-timeout 60 \
+            -X POST "$OLLAMA_URL" \
+            -H "Content-Type: application/json" \
+            -d "$payload" 2>/dev/null)
+        exit_code=$?
+        if [ $exit_code -eq 0 ] && [ -n "$response" ]; then
+            break
+        fi
+        echo "⚠️  Ollama request failed (attempt $attempt/$CURL_RETRIES, exit $exit_code). Retrying in ${delay}s..." >&2
+        sleep "$delay"
+        delay=$((delay * 2))
+        attempt=$((attempt + 1))
+    done
+
+    if [ -z "$response" ] || [ $exit_code -ne 0 ]; then
+        echo "⚠️  Ollama request failed after $CURL_RETRIES attempts." >&2
         return 1
     fi
 
-    # Extract response text with jq
     local result
     result=$(echo "$response" | jq -r '.response' 2>/dev/null)
     if [ $? -ne 0 ] || [ -z "$result" ]; then
         echo "⚠️  Failed to parse JSON response (jq error)." >&2
-        # Log the raw response for debugging
         echo "Raw response: $response" >> "$LOG_FILE"
         return 1
     fi
@@ -212,26 +230,33 @@ ask_ollama() {
     return 0
 }
 
-# --- Check syntax of a file (language‑agnostic) -------------------------------
+# --- Check syntax and capture errors ------------------------------------------
 check_syntax() {
     local file="$1"
     local lang="$2"
+    local error_output
     case "$lang" in
         python)
-            python3 -m py_compile "$file" 2>/dev/null
+            error_output=$(python3 -m py_compile "$file" 2>&1)
             ;;
         nodejs)
-            node --check "$file" 2>/dev/null
+            error_output=$(node --check "$file" 2>&1)
             ;;
         bash)
-            bash -n "$file" 2>/dev/null
+            error_output=$(bash -n "$file" 2>&1)
             ;;
         *)
-            return 0   # unknown language, assume OK
+            return 0
     esac
+    if [ $? -eq 0 ]; then
+        return 0
+    else
+        echo "$error_output"
+        return 1
+    fi
 }
 
-# --- Fix a code file (returns 0 on success, 1 on failure) --------------------
+# --- Fix a code file ----------------------------------------------------------
 fix_code() {
     local file="$1"
     local lang="$2"
@@ -249,13 +274,13 @@ fix_code() {
     if ask_ollama "You are an expert programmer. Fix the code." "$fix_prompt" > "$file.tmp"; then
         if [ -s "$file.tmp" ]; then
             mv "$file.tmp" "$file"
-            # Set executable if bash
             [ "$lang" = "bash" ] && chmod +x "$file"
-            # Validate syntax after fix
-            if check_syntax "$file" "$lang"; then
+            local syntax_result
+            syntax_result=$(check_syntax "$file" "$lang")
+            if [ $? -eq 0 ]; then
                 return 0
             else
-                echo "⚠️  Fixed code still has syntax errors." >&2
+                echo "⚠️  Fixed code still has syntax errors: $syntax_result" >&2
                 return 1
             fi
         else
@@ -284,11 +309,10 @@ ideate() {
         PROJ_LANG="${PROJ_LANG:-bash}"
         echo "⚠️  Using fallback language: $PROJ_LANG"
     else
-        # Extract only the first matching keyword
         local matched
         matched=$(echo "$lang_choice" | grep -Eio 'python|nodejs|bash' | head -n1)
         if [ -n "$matched" ]; then
-            PROJ_LANG="$matched"
+            PROJ_LANG=$(echo "$matched" | tr '[:upper:]' '[:lower:]')
         else
             PROJ_LANG="bash"
             echo "⚠️  Could not detect language – falling back to bash"
@@ -304,7 +328,6 @@ ideate() {
     echo "📦 Project: $PROJ_NAME  |  Runtime: $PROJ_LANG"
     echo "📂 Location: $PROJ_DIR"
 
-    # Set file names and commands based on language
     case "$PROJ_LANG" in
         python)
             APP_FILE="app.py"
@@ -334,7 +357,6 @@ build() {
 
     local sys="Output only raw source code. No markdown, no explanations."
 
-    # Generate application
     if ! ask_ollama "$sys" "Write a $PROJ_LANG script for: $USER_GOAL" > "$APP_FILE"; then
         echo "❌ ERROR: failed to generate app code."
         return 1
@@ -344,7 +366,6 @@ build() {
         return 1
     fi
 
-    # Generate test file
     if ! ask_ollama "$sys" "Write a test script named $TEST_FILE that validates $APP_FILE" > "$TEST_FILE"; then
         echo "❌ ERROR: failed to generate test code."
         return 1
@@ -354,7 +375,6 @@ build() {
         return 1
     fi
 
-    # Make scripts executable
     if [ "$PROJ_LANG" = "bash" ]; then
         chmod +x "$APP_FILE" "$TEST_FILE"
     fi
@@ -370,13 +390,14 @@ test_and_fix() {
     local attempts=0
     local status=1
 
-    # --- Pre‑test syntax fixing ---
+    # --- Pre‑test syntax fixing (using actual error output) ---
     echo "🔍 Checking syntax..."
     for file in "$APP_FILE" "$TEST_FILE"; do
-        if ! check_syntax "$file" "$PROJ_LANG"; then
+        local syntax_errors
+        syntax_errors=$(check_syntax "$file" "$PROJ_LANG")
+        if [ $? -ne 0 ]; then
             echo "⚠️  Syntax errors in $file – attempting to fix."
-            local errors="Syntax errors detected."
-            if fix_code "$file" "$PROJ_LANG" "$errors" "$(basename "$file")"; then
+            if fix_code "$file" "$PROJ_LANG" "$syntax_errors" "$(basename "$file")"; then
                 echo "✅ $file fixed."
             else
                 echo "❌ Could not fix $file – will try during test loop."
@@ -384,12 +405,12 @@ test_and_fix() {
         fi
     done
 
-    # --- Main test loop ---
-    while [ $attempts -lt $MAX_TEST_RETRIES ] && [ $status -ne 0 ]; do
+    # --- Main test loop (runs at least once, retries up to MAX_TEST_RETRIES) ---
+    # Condition: while attempts <= MAX_TEST_RETRIES and status != 0
+    while [ $attempts -le $MAX_TEST_RETRIES ] && [ $status -ne 0 ]; do
         ((attempts++))
-        echo "🔍 [Attempt $attempts/$MAX_TEST_RETRIES] Running: $TEST_CMD"
+        echo "🔍 [Attempt $attempts/$((MAX_TEST_RETRIES + 1))] Running: $TEST_CMD"
 
-        # Run test with timeout only if TEST_TIMEOUT > 0
         if [ "$TEST_TIMEOUT" -gt 0 ]; then
             timeout "$TEST_TIMEOUT" bash -c "$TEST_CMD" > test_output.log 2>&1
             status=$?
@@ -406,7 +427,7 @@ test_and_fix() {
             echo "✅ SUCCESS"
             echo "[$(date)] Cycle $CYCLE_COUNT passed" >> "$LOG_FILE"
             break
-        elif [ $attempts -lt $MAX_TEST_RETRIES ]; then
+        elif [ $attempts -le $MAX_TEST_RETRIES ]; then
             echo "🔧 Diagnosing and fixing..."
             local errors
             errors=$(cat test_output.log 2>/dev/null)
@@ -427,11 +448,12 @@ test_and_fix() {
                 fi
             fi
 
-            # Re-check syntax after fixes
             if [ $fixed_ok -eq 1 ]; then
                 for file in "$APP_FILE" "$TEST_FILE"; do
-                    if ! check_syntax "$file" "$PROJ_LANG"; then
-                        echo "⚠️  $file still has syntax errors – will try to fix again later."
+                    local syntax_errors
+                    syntax_errors=$(check_syntax "$file" "$PROJ_LANG")
+                    if [ $? -ne 0 ]; then
+                        echo "⚠️  $file still has syntax errors: $syntax_errors"
                     fi
                 done
             fi
@@ -439,7 +461,7 @@ test_and_fix() {
     done
 
     if [ $status -ne 0 ]; then
-        echo "❌ FAILED after $MAX_TEST_RETRIES attempts"
+        echo "❌ FAILED after $((attempts - 1)) attempts"   # adjusted count
         echo "[$(date)] Cycle $CYCLE_COUNT failed" >> "$LOG_FILE"
     fi
     cd - > /dev/null || return 1
@@ -449,18 +471,16 @@ test_and_fix() {
 cleanup_cycle() {
     cd "$PROJ_DIR" 2>/dev/null || return
     rm -f test_output.log
-    # Remove common temp files (optional)
     if [ "$CLEAN_NODE_MODULES" = "true" ]; then
         rm -rf node_modules 2>/dev/null
     fi
-    rm -rf __pycache__ *.pyc 2>/dev/null
+    rm -rf __pycache__ *.pyc *.tmp 2>/dev/null
     cd - > /dev/null || return
     sleep 0.5
 }
 
 # --- Main ---------------------------------------------------------------------
 main() {
-    # Parse arguments
     if [ -n "$1" ]; then
         USER_GOAL="$1"
     else
@@ -489,6 +509,7 @@ main() {
     echo "   Each cycle creates a new folder – nothing is ever deleted."
     echo "   ⏳ Ollama generation timeout: ${OLLAMA_MAX_TIMEOUT}s (0 = infinite)"
     echo "   🧪 Test timeout: ${TEST_TIMEOUT}s per run (0 = no timeout)"
+    echo "   🔁 Curl retries: $CURL_RETRIES"
     if [ "$MAX_CYCLES" -gt 0 ]; then
         echo "   🔢 Will stop after $MAX_CYCLES cycles."
     fi
