@@ -137,7 +137,8 @@ This prevents the script from hanging indefinitely due to slow or stuck response
 | **Permission errors** | Run with `bash` (no `chmod` needed). For Bash projects, the script already sets executable bits. |
 | **Disk space** | New cycles are created indefinitely – monitor free space or set `MAX_CYCLES` to limit. |
 
-🔧 Steps to Adjust Timeouts (to give your model more time to respond if it's slow)
+
+## 🔧 Steps to Adjust Timeouts (to give your model more time to respond if it's slow)
 1. Open agent_spin.sh in your editor or a notepad
 
 Find the configuration block near the top (lines ~10–20):
@@ -153,6 +154,7 @@ WORKSPACE_BASE="${HOME}/Desktop"
 MAX_CYCLES=0
 CLEAN_NODE_MODULES="false"
 ```
+
 
 ---
 
