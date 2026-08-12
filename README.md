@@ -160,4 +160,4 @@ Switched to model: qwen2.5:0.5b
 
 ## License
 
-MIT
+webXOS 2026 © MIT Open Sourced for Testing and Development
