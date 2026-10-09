@@ -1,40 +1,41 @@
-bash << 'UNIXAI_SCRIPT_END'
+bash << 'UNIXSI_SCRIPT_END'
 #!/usr/bin/env bash
 #
 # UNIXSI – pure‑bash Ollama harness with Endless Reflection (self‑dialogue loop)
 # Version: 3.6 (reflection prefix now "User (Reflect)>", exact loop flow)
-# Debug: /debug on  (or set UNIXAI_DEBUG=1)
+# Debug: /debug on  (or set UNIXSI_DEBUG=1)
 # Run: copy-paste this whole block into any terminal – Bash is auto‑used.
 #
 # Environment:
 #   OLLAMA_HOST          – override Ollama URL (default: http://127.0.0.1:11434)
 #   REFLECT_MAX_ITERATIONS – safety cap (default: 100000)
-#   UNIXAI_MODEL         – pre‑select a model; if invalid, exits
+#   UNIXSI_MODEL         – pre‑select a model; if invalid, exits
 #   MAX_HISTORY_MESSAGES – max messages in queue (default: 30)
 #   MAX_CONTEXT_CHARS    – rough char limit for context (default: 8000)
-#   UNIXAI_TEMPERATURE   – sampling temperature (default: 0.8)
+#   UNIXSI_TEMPERATURE   – sampling temperature (default: 0.8)
 
 set -euo pipefail
 
 # ------------------------------- Initialize flags ------------------------------
-UNIXAI_EXITED=""
+UNIXSI_EXITED=""
 SKIP_WAIT=0
 REFLECT=0
 REFLECT_COUNT=0
 REFLECT_RETRY_COUNT=0
 REFLECT_NEXT_INPUT=""
 IS_REFLECTION_INPUT=0
+MODEL=""
 
 # ------------------------------- Configurable parameters -----------------------
 OLLAMA_URL="${OLLAMA_HOST:-http://127.0.0.1:11434}"
 REFLECT_MAX_ITERATIONS="${REFLECT_MAX_ITERATIONS:-100000}"
-UNIXAI_MODEL="${UNIXAI_MODEL:-}"
+UNIXSI_MODEL="${UNIXSI_MODEL:-}"
 MAX_HISTORY_MESSAGES="${MAX_HISTORY_MESSAGES:-30}"
 MAX_CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-8000}"
-UNIXAI_TEMPERATURE="${UNIXAI_TEMPERATURE:-0.8}"
+UNIXSI_TEMPERATURE="${UNIXSI_TEMPERATURE:-0.8}"
 
 # ------------------------------- Debug flag ------------------------------------
-DEBUG=${UNIXAI_DEBUG:-0}
+DEBUG=${UNIXSI_DEBUG:-0}
 debug_log() {
     if [ "$DEBUG" -eq 1 ]; then
         echo "[DEBUG] $*" >&2
@@ -43,11 +44,11 @@ debug_log() {
 
 # ------------------------------- EXIT trap (with skip) -------------------------
 cleanup() {
-    if [ -z "$UNIXAI_EXITED" ]; then
-        UNIXAI_EXITED=1
+    if [ -z "$UNIXSI_EXITED" ]; then
+        UNIXSI_EXITED=1
         if [ $SKIP_WAIT -eq 0 ] && [ -t 0 ] && [ -t 1 ]; then
             echo
-            echo "UNIXAI session finished."
+            echo "UNIXSI session finished."
             echo "Press Enter to close this window."
             read -r < /dev/tty 2>/dev/null || true
         fi
@@ -112,7 +113,9 @@ build_prompt() {
     local base_sys="You are a helpful Unix assistant running inside a minimal bash harness. You may propose shell commands by wrapping them exactly like this: <cmd>the command</cmd>. Never invent other tags."
     if [ $REFLECT -eq 1 ]; then
         # Add extra instruction for reflection mode – treat your previous response as the user's new message.
-        base_sys="$base_sys\n\nYou are currently in a self‑dialogue loop. Your previous response will be sent back to you as a user message. Reply to that message as if you are a helpful assistant continuing the conversation – be creative, provide new insights, and never repeat the exact same answer."
+        base_sys="$base_sys
+
+You are currently in a self‑dialogue loop. Your previous response will be sent back to you as a user message. Reply to that message as if you are a helpful assistant continuing the conversation – be creative, provide new insights, and never repeat the exact same answer."
     fi
     full_prompt="$base_sys
 "
@@ -130,6 +133,7 @@ build_prompt() {
 "
         fi
     done
+    full_prompt+="Assistant:"
     printf '%s' "$full_prompt"
 }
 
@@ -180,7 +184,7 @@ extract_response() {
                                 rest = substr(rest, 2)
                                 while (length(rest) > 0) {
                                     if (escape) {
-                                        resp = resp substr(rest, 1, 1)
+                                        resp = resp "\\" substr(rest, 1, 1)
                                         escape = 0
                                         rest = substr(rest, 2)
                                     } else if (substr(rest, 1, 1) == "\\") {
@@ -214,8 +218,8 @@ extract_response() {
 show_thinking() {
     local pid=$1
     if [ ! -t 1 ]; then
-        wait "$pid" 2>/dev/null
-        return
+        wait "$pid" 2>/dev/null || true
+        return 0
     fi
     local start_time=$(date +%s)
     local elapsed=0
@@ -227,8 +231,9 @@ show_thinking() {
         i=$((i+1))
         sleep 0.2
     done
-    wait "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null || true
     printf "\r\033[K"
+    return 0
 }
 
 # ----------------------------------- Model listing (robust) --------------------
@@ -297,7 +302,7 @@ extract_commands() {
                         break
                     } else {
                         cmd = cmd substr(line, 1, idx - 1)
-                        print cmd
+                        printf "%s%c", cmd, 0
                         inside = 0
                         line = substr(line, idx + 6)
                         cmd = ""
@@ -307,7 +312,7 @@ extract_commands() {
         }
         END {
             if (inside && length(cmd) > 0) {
-                print cmd
+                printf "%s%c", cmd, 0
             }
         }
     '
@@ -317,7 +322,7 @@ extract_commands() {
 start_ollama() {
     if ! curl -s --max-time 2 "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
         echo "Starting ollama serve..."
-        nohup ollama serve >/tmp/ollama-unixai.log 2>&1 &
+        nohup ollama serve >/tmp/ollama-unixsi.log 2>&1 &
         sleep 2
         local wait_sec=0
         while [ $wait_sec -lt 30 ]; do
@@ -338,7 +343,7 @@ start_ollama() {
 send_prompt() {
     local model="$1"
     local prompt="$2"
-    local temp="${UNIXAI_TEMPERATURE}"
+    local temp="${UNIXSI_TEMPERATURE}"
 
     local escaped=$(json_escape "$prompt")
     debug_log "Sending prompt to $model: $escaped"
@@ -359,14 +364,13 @@ send_prompt() {
 
     local curl_pid=$!
     show_thinking $curl_pid
-    local exit_code=$?
     local http_status=$(cat "$status_file" 2>/dev/null || echo "000")
 
-    debug_log "Curl exit: $exit_code, HTTP status: $http_status"
+    debug_log "HTTP status: $http_status"
     debug_log "Curl error: $(cat "$error_file")"
 
-    if [ $exit_code -ne 0 ] || [ "$http_status" != "200" ]; then
-        echo "AI> [Error: Ollama request failed (HTTP $http_status)]" >&2
+    if [ "$http_status" != "200" ]; then
+        echo "SI> [Error: Ollama request failed (HTTP $http_status)]" >&2
         if [ -s "$error_file" ]; then
             echo "Details: $(cat "$error_file")" >&2
         fi
@@ -382,7 +386,7 @@ send_prompt() {
     rm -f "$body_file" "$status_file" "$error_file"
 
     if [ -z "$response" ]; then
-        echo "AI> [Warning: Empty response from model]" >&2
+        echo "SI> [Warning: Empty response from model]" >&2
         return 1
     fi
 
@@ -392,15 +396,15 @@ send_prompt() {
 
 # ----------------------------------- Model selection helper (plain menu) ------
 select_model() {
-    if [ -n "$UNIXAI_MODEL" ]; then
+    if [ -n "$UNIXSI_MODEL" ]; then
         for m in "${models[@]}"; do
-            if [ "$m" = "$UNIXAI_MODEL" ]; then
+            if [ "$m" = "$UNIXSI_MODEL" ]; then
                 MODEL="$m"
                 echo "Using model from environment: $MODEL"
                 return 0
             fi
         done
-        echo "ERROR: UNIXAI_MODEL='$UNIXAI_MODEL' is not available. Exiting."
+        echo "ERROR: UNIXSI_MODEL='$UNIXSI_MODEL' is not available. Exiting."
         exit 1
     fi
 
@@ -448,7 +452,7 @@ select_model() {
         fi
     done
     # Non-interactive fallback
-    if [ -z "$MODEL" ] && [ ${#models[@]} -gt 0 ]; then
+    if [ -z "${MODEL:-}" ] && [ ${#models[@]} -gt 0 ]; then
         MODEL="${models[0]}"
         echo "Non-interactive mode: using first model '$MODEL'."
         return 0
@@ -460,10 +464,10 @@ select_model() {
 # ----------------------------------- ASCII banner ------------------------------
 ascii_banner() {
     cat << "BANNER_EOF"
-    ▘  ▄▖▄▖
-▌▌▛▌▌▚▘▌▌▐ 
-▙▌▌▌▌▞▖▛▌▟▖
-    UNIXAI – Agent Harness
+▖▖▖ ▖▄▖▖▖▄▖▄▖
+▌▌▛▖▌▐ ▚▘▚ ▐ 
+▙▌▌▝▌▟▖▌▌▄▌▟▖
+    UNIXSI – Agent Harness
 BANNER_EOF
 }
 
@@ -486,7 +490,7 @@ Available commands:
                          (the prompt becomes the first "User (Reflect)" message)
   /reflect off       - Stop the loop and return to normal interactive mode
 
-  exit, quit, q      - Exit UNIXAI
+  exit, quit, q      - Exit UNIXSI
 
 Anything else is sent as a prompt to the selected Ollama model.
 
@@ -535,10 +539,10 @@ fi
 
 select_model
 echo "Using model: $MODEL"
-echo "Temperature: $UNIXAI_TEMPERATURE"
+echo "Temperature: $UNIXSI_TEMPERATURE"
 echo
 
-echo "UNIXAI ready — type your messages below."
+echo "UNIXSI ready — type your messages below."
 echo
 show_help
 echo
@@ -623,8 +627,17 @@ while true; do
             fi
             continue
             ;;
+        /*)
+            echo "Unknown command: $INPUT"
+            continue
+            ;;
         "") continue ;;
     esac
+
+    # If reflection input, show it before sending
+    if [ $IS_REFLECTION_INPUT -eq 1 ]; then
+        echo "User (Reflect)> $INPUT"
+    fi
 
     # ---------- Add user message to history ----------
     add_message "user" "$INPUT"
@@ -634,8 +647,7 @@ while true; do
     debug_log "Built prompt: $PROMPT"
 
     # ---------- Get response ----------
-    RESP=$(send_prompt "$MODEL" "$PROMPT")
-    if [ $? -ne 0 ] || [ -z "$RESP" ]; then
+    if ! RESP=$(send_prompt "$MODEL" "$PROMPT"); then
         # Remove the user message we just added (since it failed)
         if [[ ${#MSG_HISTORY[@]} -gt 0 ]]; then
             MSG_HISTORY=("${MSG_HISTORY[@]:0:${#MSG_HISTORY[@]}-1}")
@@ -648,9 +660,16 @@ while true; do
                 REFLECT_NEXT_INPUT=""
                 REFLECT_RETRY_COUNT=0
             else
-                echo "AI> [Retry $REFLECT_RETRY_COUNT/5 after error...]" >&2
+                echo "SI> [Retry $REFLECT_RETRY_COUNT/5 after error...]" >&2
                 sleep 2
             fi
+        fi
+        continue
+    fi
+    if [ -z "$RESP" ]; then
+        # Empty response, treat as error
+        if [[ ${#MSG_HISTORY[@]} -gt 0 ]]; then
+            MSG_HISTORY=("${MSG_HISTORY[@]:0:${#MSG_HISTORY[@]}-1}")
         fi
         continue
     fi
@@ -660,11 +679,7 @@ while true; do
     add_message "assistant" "$RESP"
 
     # ---------- Print the response ----------
-    if [ $IS_REFLECTION_INPUT -eq 1 ]; then
-        echo "User (Reflect)> $RESP"
-    else
-        echo "AI> $RESP"
-    fi
+    echo "SI> $RESP"
 
     # ---------- Prepare next reflection input (if enabled) ----------
     if [ $REFLECT -eq 1 ]; then
@@ -674,27 +689,30 @@ while true; do
             REFLECT=0
             REFLECT_NEXT_INPUT=""
         else
-            # Use the AI's own response as the next user input (self‑dialogue)
+            # Use the SI's own response as the next user input (self‑dialogue)
             REFLECT_NEXT_INPUT="$RESP"
         fi
     fi
 
     # ---------- Agent mode: extract commands (always active) ----------
-    cmds=$(extract_commands "$RESP")
-    if [ -n "$cmds" ]; then
-        echo
-        while IFS= read -r cmd; do
-            if [ -n "$cmd" ]; then
-                echo ">>> Proposed command: $cmd"
-                printf "Run it? [y/N/s=with sudo] "
-                read -r ans < /dev/tty
-                case "$ans" in
-                    y|Y) eval "$cmd" ;;
-                    s|S) sudo bash -c "$cmd" ;;
-                    *) echo "skipped" ;;
-                esac
-            fi
-        done <<< "$cmds"
+    tmp_cmds=$(mktemp)
+    if extract_commands "$RESP" > "$tmp_cmds"; then
+        if [ -s "$tmp_cmds" ]; then
+            echo
+            while IFS= read -r -d '' cmd; do
+                if [ -n "$cmd" ]; then
+                    echo ">>> Proposed command: $cmd"
+                    printf "Run it? [y/N/s=with sudo] "
+                    read -r ans < /dev/tty || ans=""
+                    case "$ans" in
+                        y|Y) eval "$cmd" ;;
+                        s|S) sudo bash -c "$cmd" ;;
+                        *) echo "skipped" ;;
+                    esac
+                fi
+            done < "$tmp_cmds"
+        fi
     fi
+    rm -f "$tmp_cmds"
 done
-UNIXAI_SCRIPT_END
+UNIXSI_SCRIPT_END
