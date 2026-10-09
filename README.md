@@ -1,8 +1,10 @@
-# UNIXAI – Under Development
+
+# UNIXSI – Under Development
 ```
-    ▘  ▄▖▄▖
-▌▌▛▌▌▚▘▌▌▐ 
-▙▌▌▌▌▞▖▛▌▟▖
+▖▖▖ ▖▄▖▖▖▄▖▄▖
+▌▌▛▖▌▐ ▚▘▚ ▐ 
+▙▌▌▝▌▟▖▌▌▄▌▟▖
+    UNIXSI – Agent Harness
 ```
 Version 3.6 – A minimalist, single‑script bash harness that turns any local Ollama model into an autonomous conversational agent with an endless reflection mode, message queue, and built‑in tool‑calling.
 
@@ -10,7 +12,7 @@ Version 3.6 – A minimalist, single‑script bash harness that turns any local 
 
 ## Overview
 
-UNIXAI is a self‑contained Bash script that designed to run off one bash entirely in your terminal. It connects to a local Ollama server and lets you chat with any model. It offers a unique **Reflection Loop** – a self‑dialogue where the AI continuously responds to its own previous messages, simulating a conversation between a user and an assistant. The loop can be started with any initial prompt and runs indefinitely until you interrupt it.
+UNIXSI is a self‑contained Bash script that designed to run off one bash entirely in your terminal. It connects to a local Ollama server and lets you chat with any model. It offers a unique **Reflection Loop** – a self‑dialogue where the SI continuously responds to its own previous messages, simulating a conversation between a user and an assistant. The loop can be started with any initial prompt and runs indefinitely until you interrupt it.
 
 Agent capabilities (command suggestion via `<cmd>...</cmd>` tags) are always active, making it useful for system administration, development, or exploring model behavior.
 
@@ -18,14 +20,14 @@ Agent capabilities (command suggestion via `<cmd>...</cmd>` tags) are always act
 
 ## Features
 
-- **Reflection Loop** – `/reflect on <prompt>` starts an autonomous self‑dialogue: the AI replies to itself, alternating between `User (Reflect)` and `AI` roles. Perfect for brainstorming, idea refinement, or testing model reasoning.
+- **Reflection Loop** – `/reflect on <prompt>` starts an autonomous self‑dialogue: the SI replies to itself, alternating between `User (Reflect)` and `SI` roles. Perfect for brainstorming, idea refinement, or testing model reasoning.
 - **Message Queue** – Conversation history is stored and automatically trimmed based on message count and character limits (configurable), helping smaller models stay within context window.
 - **Thinking Visualizer** – A live elapsed‑time spinner shows how long the model is taking to respond.
 - **Agent Mode Always On** – The model can propose shell commands using `<cmd>...</cmd>` tags; you are prompted to execute, skip, or run with `sudo`.
 - **Model Switching** – List available models and switch at runtime with `/model`.
 - **Debugging** – Toggle debug output with `/debug on/off`.
 - **Pure Bash** – No external dependencies beyond `curl` and `ollama` (which the script will install if missing).
-- **Non‑interactive Fallback** – When `/dev/tty` is unavailable, falls back to first model or `UNIXAI_MODEL` environment variable.
+- **Non‑interactive Fallback** – When `/dev/tty` is unavailable, falls back to first model or `UNIXSI_MODEL` environment variable.
 
 ---
 
@@ -41,9 +43,9 @@ Optional (for better JSON parsing): `jq` or `python3`. If neither is present, a 
 
 ## Installation
 
-UNIXAI is a single Bash block. To install:
+UNIXSI is a single Bash block. To install:
 
-Copy the entire file (`bash << 'UNIXAI_SCRIPT_END' ...`) block and paste it into your terminal – it will run immediately.
+Copy the entire file (`bash << 'UNIXSI_SCRIPT_END' ...`) block and paste it into your terminal – it will run immediately.
 
 ---
 
@@ -61,7 +63,7 @@ To start the endless loop with an initial prompt:
 /reflect on write a short story about a robot
 ```
 
-This starts a 1:1 loop between the AI> agent and the User (Reflect)> agent. The loop continues until you:
+This starts a 1:1 loop between the SI> agent and the User (Reflect)> agent. The loop continues until you:
 - Type `/reflect off`
 - Or type any normal message (which will break the loop and become your next user input)
 
@@ -91,7 +93,7 @@ Run it? [y/N/s=with sudo]
 | `/clear` | Clear the terminal screen |
 | `/debug on/off` | Toggle debug logging |
 | `/help` | Display this help |
-| `exit`, `quit`, `q` | Exit UNIXAI |
+| `exit`, `quit`, `q` | Exit UNIXSI |
 
 ---
 
@@ -102,16 +104,16 @@ All settings can be overridden before running the script:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama server URL |
-| `UNIXAI_MODEL` | (none) | Pre‑select a model; if not found, script exits |
+| `UNIXSI_MODEL` | (none) | Pre‑select a model; if not found, script exits |
 | `REFLECT_MAX_ITERATIONS` | `100000` | Safety cap for loop iterations |
 | `MAX_HISTORY_MESSAGES` | `30` | Max number of messages kept in queue |
 | `MAX_CONTEXT_CHARS` | `8000` | Approximate character limit for the context |
-| `UNIXAI_TEMPERATURE` | `0.8` | Sampling temperature for generation |
-| `UNIXAI_DEBUG` | `0` | Set to `1` to enable debug output at start |
+| `UNIXSI_TEMPERATURE` | `0.8` | Sampling temperature for generation |
+| `UNIXSI_DEBUG` | `0` | Set to `1` to enable debug output at start |
 
 Example:
 ```bash
-UNIXAI_MODEL=llama3.2 REFLECT_MAX_ITERATIONS=500 ./unixai.sh
+UNIXSI_MODEL=llama3.2 REFLECT_MAX_ITERATIONS=500 ./unixsi.sh
 ```
 
 ---
@@ -123,12 +125,12 @@ UNIXAI_MODEL=llama3.2 REFLECT_MAX_ITERATIONS=500 ./unixai.sh
 /reflect on write a bash function to check if a port is open
 ```
 
-The AI will generate a function, then respond to its own output, improving and refining the code.
+The SI will generate a function, then respond to its own output, improving and refining the code.
 
 ### 2. Example: Use the model for system administration (agent mode)
 ```
 You> list all files in /tmp that are older than 7 days
-AI> You can use: find /tmp -type f -mtime +7 <cmd>find /tmp -type f -mtime +7</cmd>
+SI> You can use: find /tmp -type f -mtime +7 <cmd>find /tmp -type f -mtime +7</cmd>
 >>> Proposed command: find /tmp -type f -mtime +7
 Run it? [y/N/s=with sudo] y
 [output...]
@@ -152,7 +154,7 @@ Switched to model: qwen2.5:0.5b
 |-------|----------|
 | `Ollama not found` | The script will try to install it automatically. If that fails, install manually: `curl -fsSL https://ollama.com/install.sh \| sh` |
 | `Failed to connect to Ollama` | Ensure Ollama is running (`ollama serve`). Check `OLLAMA_HOST` if using a custom address. |
-| `Reflection loop stops or repeats` | Increase `MAX_HISTORY_MESSAGES` and `MAX_CONTEXT_CHARS` to retain more context, or raise `UNIXAI_TEMPERATURE` for more variation. |
+| `Reflection loop stops or repeats` | Increase `MAX_HISTORY_MESSAGES` and `MAX_CONTEXT_CHARS` to retain more context, or raise `UNIXSI_TEMPERATURE` for more variation. |
 | `Command execution not working` | You must type `y` or `s` when prompted. Commands are run in the current shell; `sudo` may require a password. |
 | `JSON parse errors` | Install `jq` for more reliable parsing: `sudo apt install jq` (Debian/Ubuntu) or `brew install jq` (macOS). |
 
