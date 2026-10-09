@@ -1,4 +1,4 @@
-# 🌀 UNIXAI: AGENT SPIN – Autonomous Code Factory (Under Development)
+# 🌀 UNIXSI: AGENT SPIN – Autonomous Code Factory (Under Development)
 
 **Infinite Loop • Git Auto‑Commit • Local LLM Driven • Production‑Ready**
 
