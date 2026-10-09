@@ -1,7 +1,7 @@
 bash << 'UNIXAI_SCRIPT_END'
 #!/usr/bin/env bash
 #
-# UNIXAI – pure‑bash Ollama harness with Endless Reflection (self‑dialogue loop)
+# UNIXSI – pure‑bash Ollama harness with Endless Reflection (self‑dialogue loop)
 # Version: 3.6 (reflection prefix now "User (Reflect)>", exact loop flow)
 # Debug: /debug on  (or set UNIXAI_DEBUG=1)
 # Run: copy-paste this whole block into any terminal – Bash is auto‑used.
